@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # Copyright (C) 2023 Hasan ÇALIŞIR <hasan.calisir@psauxit.com>
 # Distributed under the GNU General Public License, version 2.0.
@@ -38,21 +38,26 @@ queries="/var/log/named/queries.log"
 pool="10.8.0.0"
 ####################################################
 
-# declare associative array
-declare -A clients
+# pool prefix
+pool_prefix="${pool%.*}"
 
 # set color
 setup_terminal () {
-  green="$(tput setaf 2)"; red="$(tput setaf 1)"; reset="$(tput sgr 0)"
-  cyan="$(tput setaf 6)"; magenta="$(tput setaf 5)"
-  TPUT_BOLD="$(tput bold)"; TPUT_BGRED="$(tput setab 1)"
-  TPUT_WHITE="$(tput setaf 7)"; m_tab='  '; TPUT_RESET="$(tput sgr 0)"
+  red=$(tput setaf 1)
+  cyan=$(tput setaf 6)
+  magenta=$(tput setaf 5)
+  TPUT_BOLD=$(tput bold)
+  TPUT_BGRED=$(tput setab 1)
+  TPUT_WHITE=$(tput setaf 7)
+  reset=$(tput sgr 0)
+  printf -v m_tab '%*s' 2 ''
 }
+
 setup_terminal
 
 # fatal
 fatal () {
-  printf >&2 "\n${m_tab}%s ABORTED %s %s \n\n" "${TPUT_BGRED}${TPUT_WHITE}${TPUT_BOLD}" "${TPUT_RESET}" "${*}"
+  printf >&2 "\n${m_tab}%s ABORTED %s %s \n\n" "${TPUT_BGRED}${TPUT_WHITE}${TPUT_BOLD}" "${reset}" "${@}"
   exit 1
 }
 
@@ -75,29 +80,30 @@ else
   exit 1
 fi
 
-# here we create associative array
+# declare associative array
+declare -A clients
+
 # key-value --> client name-static ip
-for each in $(find "${ccd}" -type f -exec basename {} \;)
+while read -r each
 do
- clients[${each}]=$(< "${ccd}/${each}" grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" | grep "$(echo "${pool}" | awk -v FS='.' '{print $1"."$2}')")
-done
+  clients[${each}]=$(< "${ccd}/${each}" grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" | grep "${pool_prefix}")
+done < <(find "${ccd}" -type f -exec basename {} \;)
 
 # list OpenVPN clients
 list_clients () {
-  echo -e "\n${m_tab}${cyan}# OpenVPN Clients"
-  echo -e "${m_tab} --------------------------------${reset}"
+  printf '\n%s%s# OpenVPN Clients\n' "$m_tab" "$cyan"
+  printf '%s --------------------------------%s\n' "$m_tab" "$reset"
   while read -r line
   do
-    echo -e "${m_tab}${magenta}$(echo "${line}" | sed 's/^/  /')${reset}"
-  done < <(find "${ccd}" -type f -exec basename {} \; | paste - - -)
-  echo -e "${cyan}${m_tab} --------------------------------${reset}"
-  echo ""
+    printf '%s%s%s\n' "$m_tab" "$magenta" "$(printf '  %s' "$line")$reset"
+  done < <(find "$ccd" -type f -exec basename {} \; | paste - - -)
+  printf '%s%s --------------------------------%s\n\n' "$cyan" "$m_tab" "$reset"
 }
 
 # check openvpn client existence
 check_client () {
-  if [[ ! " ${!clients[*]} " =~ " ${1} " ]]; then
-    fatal "Cannot find OpenVPN client --> ${1}! Use --list to show OpenVPN Clients."
+  if [[ -z "${clients["$1"]}" ]]; then
+    fatal "Cannot find OpenVPN client --> $1! Use --list to show OpenVPN Clients."
   fi
 }
 
@@ -110,57 +116,42 @@ all_clients () {
   # key-value --> client name-http_traffic
   declare -A http
 
-  for client in ${!clients[@]}
+  for client in "${!clients[@]}"
   do
-    eval "http[${client}]=\"$(find "${queries%/*}/" -name \*"${queries##*/}"* -print0 2>/dev/null |
-                              # search openvpn client static IP in all files (logrotated ones included)
-                              xargs -0 zgrep -i ${clients[${client}]} |
-                              # parse queries for this client
-                              awk '{for(i=1; i<=NF; i++) if($i~/query:/) print $1" "$(i+1)}' |
-                              # normalize data
-                              awk -F: '{print $2 $3}' |
-                              # output to lowercase for better handling duplicates
-                              tr '[:upper:]' '[:lower:]' |
-                              # remove duplicate queries
-                              awk '!a[$0]++' |
-                              # sort by date
-                              sort -b -t- -k2,2 -k1,1)\""
-  done
-
-  # save per openvpn client http traffic to file
-  for client in ${!http[@]}
-  do
-    echo "${http[${client}]}" > "${this_script_path}"/http_traffic_"${client}"
-    echo "${cyan}${m_tab}Openvpn Client --> ${magenta}${client}${reset} ${cyan}--> HTTP traffic saved in --> ${magenta}${this_script_path}"/http_traffic_"${client}${reset}"
+    http["${client}"]=$(find "${queries%/*}/" -name "*${queries##*/}*" -print0 2>/dev/null |
+      # search openvpn client static IP in all files (logrotated ones included)
+      xargs -0 zgrep -i "${clients[${client}]}" |
+      # parse queries for this client
+      awk '{for(i=1; i<=NF; i++) if($i~/query:/) print $1" "$2" "$((i+1))}' |
+      # normalize data
+      awk -F: '{print substr($0,index($0,$2))}')
+    # save per openvpn client http traffic to file as sorted
+    echo "${http[${client}]}" | sort -k1.8n -k1.4M -k1.1n > "${this_script_path}/http_traffic_${client}"
+    echo "${cyan}${m_tab}Openvpn Client --> ${magenta}${client}${reset} ${cyan}--> HTTP traffic saved in --> ${magenta}${this_script_path}/http_traffic_${client}${reset}"
   done
   echo ""
 }
 
 # parse http traffic for specific openvpn client
+# parse http traffic for specific openvpn client
 single_client () {
   check_client "${1}"
-  local single="$(find "${queries%/*}/" -name \*"${queries##*/}"* -print0 2>/dev/null |
-                  # search openvpn client static IP in all files (logrotated ones included)
-                  xargs -0 zgrep -i ${clients[${1}]} |
-                  # parse queries for this client
-                  awk '{for(i=1; i<=NF; i++) if($i~/query:/) print $1" "$(i+1)}' |
-                  # normalize data
-                  awk -F: '{print $2 $3}' |
-                  # output to lowercase for better handling duplicates
-                  tr '[:upper:]' '[:lower:]' |
-                  # remove duplicate queries
-                  awk '!a[$0]++' |
-                  # sort by date
-                  sort -b -t- -k2,2 -k1,1)"
-
-  echo "${single}" > "${this_script_path}"/http_traffic_"${1}"
-  echo -e "\n${cyan}${m_tab}Openvpn Client --> ${magenta}${1}${reset} ${cyan}--> HTTP traffic saved in --> ${magenta}${this_script_path}"/http_traffic_"${1}${reset}\n"
+  local single
+  single="$(find "${queries%/*}/" -name "*${queries##*/}*" -print0 2>/dev/null |
+    # search openvpn client static IP in all files (logrotated ones included)
+    xargs -0 zgrep -i "${clients[${1}]}" |
+    # parse queries for this client
+    awk '{for(i=1; i<=NF; i++) if($i~/query:/) print $1" "$2" "$((i+1))}' |
+    # normalize data
+    awk -F: '{print substr($0,index($0,$2))}')"
+  echo "${single}" | sort -k1.8n -k1.4M -k1.1n > "${this_script_path}/http_traffic_${1}"
+  echo -e "\n${cyan}${m_tab}Openvpn Client --> ${magenta}${1}${reset} ${cyan}--> HTTP traffic saved in --> ${magenta}${this_script_path}/http_traffic_${1}${reset}\n"
 }
 
 # live watch http traffic for specific OpenVPN client
 watch_client () {
   check_client "${1}"
-  tail -f "${queries}" | grep --line-buffered "${clients[${1}]}" | awk '{for(i=1; i<=NF; i++) if($i~/query:/) print $1" "$(i+1)}'
+  tail -f "${queries}" | grep --line-buffered "${clients[${1}]}" | awk '{for(i=1; i<=NF; i++) if($i~/query:/) printf "\033[35m%s\033[39m \033[36m%s\033[39m\n", $1, $(i+1)}'
 }
 
 # help
@@ -177,28 +168,32 @@ help () {
 
 # invalid script option
 inv_opt () {
-  printf "%s\\n" "${red}${prog_name}: Invalid option '$1'${reset}"
-  printf "%s\\n" "${cyan}Try '${script_name} --help' for more information.${reset}"
+  echo ""
+  printf "%s\\n" "${red}${m_tab}Invalid option${reset}"
+  printf "%s\\n" "${cyan}${m_tab}Try './${this_script_name} --help' for more information.${reset}"
+  echo ""
   exit 1
 }
 
 # script management
 main () {
   if [[ "$#" -eq 0 || "$#" -gt 2 ]]; then
-    printf "%s\\n" "${red}${prog_name}: Argument required or too many argument${reset}"
-    printf "%s\\n" "${cyan}Try '${script_name} --help' for more information.${reset}"
+    echo ""
+    printf "%s\\n" "${red}${m_tab}Argument required or too many argument${reset}"
+    printf "%s\\n" "${cyan}${m_tab}Try './${this_script_name} --help' for more information.${reset}"
+    echo ""
     exit 1
   fi
 
   # set script arguments
   while [[ "$#" -gt 0 ]]; do
     case "$1" in
-      -a  | --all-clients ) all_clients      ;;
-      -c  | --client      ) single_client $2 ;;
-      -w  | --watch       ) watch_client  $2 ;;
-      -l  | --list        ) list_clients     ;;
-      -h  | --help        ) help             ;;
-      --  | -* | *        ) inv_opt          ;;
+      -a  | --all-clients ) all_clients        ;;
+      -c  | --client      ) single_client "$2" ;;
+      -w  | --watch       ) watch_client  "$2" ;;
+      -l  | --list        ) list_clients       ;;
+      -h  | --help        ) help               ;;
+      *                   ) inv_opt            ;;
     esac
     break
   done
