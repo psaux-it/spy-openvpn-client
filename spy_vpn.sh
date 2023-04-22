@@ -76,9 +76,10 @@ else
 fi
 
 # declare associative array
-# key-value --> client name-static ip
 declare -A clients
 
+# populate array
+# key-value --> client name-static ip
 while read -r each
 do
   clients[${each}]=$(< "${ccd}/${each}" grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" | grep "${pool_prefix}")
@@ -102,40 +103,48 @@ check_client () {
   fi
 }
 
-# parse http traffic for all openvpn client
-# this can take long time if you have many client
+# parse http traffic for all openvpn clients, this will be run in parallel
+# this can cause high cpu usage if you have many clients and heavy internet traffic
 all_clients () {
   list_clients
+  num_cores=$(nproc)
 
-  # here we create new associative array
-  # key-value --> client name-http_traffic
-  declare -A http
-
-  for client in "${!clients[@]}"
-  do
-    http["${client}"]="$(find "${queries%/*}/" -name "*${queries##*/}*" -print0 2>/dev/null |
-      # search openvpn client static IP in all files (logrotated ones included)
-      xargs -0 zgrep -i -h "${clients[${client}]}" |
-      # parse queries for this client
-      awk '{for(i=1; i<=NF; i++) if($i~/query:/) print $1" "$2" "$((i+1))}')"
+  # create a function to parse HTTP traffic for a single client
+  parse_traffic () {
+    local client="${1}"
+    # search openvpn client static IP (logrotated ones included) and parse DNS queries
+    local output="$(find "${queries%/*}/" -name "*${queries##*/}*" -type f -exec zgrep -i -h "${clients[$client]}" {} + |
+      awk 'match($0, /query:[[:space:]]*([^[:space:]]+)/, a) {print $1" "$2" "a[1]}' |
+      sort -s -k1.8n -k1.4M -k1.1n)"
     # save per openvpn client http traffic to file as sorted
-    echo "${http[${client}]}" | sort -k1.8n -k1.4M -k1.1n > "${this_script_path}/http_traffic_${client}"
-    echo "${cyan}${m_tab}Openvpn Client --> ${magenta}${client}${reset} ${cyan}--> HTTP traffic saved in --> ${magenta}${this_script_path}/http_traffic_${client}${reset}"
+    printf "%s\n" "${output}" > "${this_script_path}/http_traffic_${client}"
+    printf "%s\n" "${cyan}${m_tab}Openvpn Client --> ${magenta}${client}${reset} ${cyan}--> HTTP traffic saved in --> ${magenta}${this_script_path}/http_traffic_${client}${reset}"
+  }
+
+  # Loop through the clients and parse their HTTP traffic in parallel
+  # Limit the number of parallel processes to the number of CPU core
+  for client in "${!clients[@]}"; do
+    parse_traffic "${client}" &
+    if (( $(jobs -r -p | wc -l) >= num_cores )); then
+      wait -n
+    fi
   done
-  echo ""
+  printf "\n"
 }
 
-# parse http traffic for specific openvpn client as argument
+# parse http traffic for specific openvpn client
 single_client () {
   check_client "${1}"
   local single
-  single="$(find "${queries%/*}/" -name "*${queries##*/}*" -print0 2>/dev/null |
-    # search openvpn client static IP in all files (logrotated ones included)
-    xargs -0 zgrep -i -h "${clients[${1}]}" |
-    # parse queries for this client
-    awk '{for(i=1; i<=NF; i++) if($i~/query:/) print $1" "$2" "$((i+1))}')"
-  echo "${single}" | sort -k1.8n -k1.4M -k1.1n > "${this_script_path}/http_traffic_${1}"
-  echo -e "\n${cyan}${m_tab}Openvpn Client --> ${magenta}${1}${reset} ${cyan}--> HTTP traffic saved in --> ${magenta}${this_script_path}/http_traffic_${1}${reset}\n"
+  # search openvpn client static IP (logrotated ones included) and parse DNS queries
+  single="$(find "${queries%/*}/" -name "*${queries##*/}*" -type f -exec zgrep -i -h "${clients[${1}]}" {} + |
+    awk 'match($0, /query:[[:space:]]*([^[:space:]]+)/, a) {print $1" "$2" "a[1]}' |
+    sort -s -k1.8n -k1.4M -k1.1n)"
+  # save client http traffic to file as sorted
+  printf "%s\n" "${single}" > "${this_script_path}/http_traffic_${1}"
+  printf "\n"
+  printf "%s\n" "${cyan}${m_tab}Openvpn Client --> ${magenta}${1}${reset} ${cyan}--> HTTP traffic saved in --> ${magenta}${this_script_path}/http_traffic_${1}${reset}"
+  printf "\n"
 }
 
 # live watch http traffic for specific OpenVPN client
@@ -146,32 +155,34 @@ watch_client () {
 
 # help
 help () {
-  echo -e "\n${m_tab}${cyan}# Script Help"
-  echo -e "${m_tab}# --------------------------------------------------------------------------------------------------------------------"
-  echo -e "${m_tab}#${m_tab}  -a | --all-clients   get all OpenVPN clients http traffic to separate file e.g ./spy_vpn.sh --all-clients"
-  echo -e "${m_tab}#${m_tab}  -c | --client        get specific OpenVPN client http traffic to file e.g ./spy_vpn.sh --client JohnDoe"
-  echo -e "${m_tab}#${m_tab}  -l | --list          list OpenVPN clients e.g ./spy_vpn.sh --list"
-  echo -e "${m_tab}#${m_tab}  -w | --watch         live watch specific OpenVPN client http traffic ./spy_vpn.sh --watch JohnDoe"
-  echo -e "${m_tab}#${m_tab}  -h | --help          help screen"
-  echo -e "${m_tab}# ----------------------------------------------------------------------------------------------------------------------${reset}\n"
+  printf "\n"
+  printf "%s\n" "${m_tab}${cyan}# Script Help"
+  printf "%s\n" "${m_tab}# --------------------------------------------------------------------------------------------------------------------"
+  printf "%s\n" "${m_tab}#${m_tab}  -a | --all-clients   get all OpenVPN clients http traffic to separate file e.g ./spy_vpn.sh --all-clients"
+  printf "%s\n" "${m_tab}#${m_tab}  -c | --client        get specific OpenVPN client http traffic to file e.g ./spy_vpn.sh --client JohnDoe"
+  printf "%s\n" "${m_tab}#${m_tab}  -l | --list          list OpenVPN clients e.g ./spy_vpn.sh --list"
+  printf "%s\n" "${m_tab}#${m_tab}  -w | --watch         live watch specific OpenVPN client http traffic ./spy_vpn.sh --watch JohnDoe"
+  printf "%s\n" "${m_tab}#${m_tab}  -h | --help          help screen"
+  printf "%s\n" "${m_tab}# ----------------------------------------------------------------------------------------------------------------------${reset}"
+  printf "\n"
 }
 
 # invalid script option
 inv_opt () {
-  echo ""
+  printf "\n"
   printf "%s\\n" "${red}${m_tab}Invalid option${reset}"
   printf "%s\\n" "${cyan}${m_tab}Try './${this_script_name} --help' for more information.${reset}"
-  echo ""
+  printf "\n"
   exit 1
 }
 
 # script management
 main () {
   if [[ "$#" -eq 0 || "$#" -gt 2 ]]; then
-    echo ""
+    printf "\n"
     printf "%s\\n" "${red}${m_tab}Argument required or too many argument${reset}"
     printf "%s\\n" "${cyan}${m_tab}Try './${this_script_name} --help' for more information.${reset}"
-    echo ""
+    printf "\n"
     exit 1
   fi
 
