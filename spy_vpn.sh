@@ -111,12 +111,14 @@ all_clients () {
 
   # create a function to parse HTTP traffic for a single client
   parse_traffic () {
-    local client="${1}"
-    # search openvpn client static IP (logrotated ones included) and parse DNS queries
-    local output="$(find "${queries%/*}/" -name "*${queries##*/}*" -type f -exec zgrep -i -h "${clients[$client]}" {} + |
+    local client output ip
+    ip="${clients[$client]}"
+    client="${1}"
+    # search openvpn client static IP (logrotated ones included), parse DNS queries, sort
+    output="$(find "${queries%/*}/" -name "*${queries##*/}*" -type f -exec zgrep -i -h "${ip}" {} + |
       awk 'match($0, /query:[[:space:]]*([^[:space:]]+)/, a) {print $1" "$2" "a[1]}' |
       sort -s -k1.8n -k1.4M -k1.1n)"
-    # save per openvpn client http traffic to file as sorted
+    # save per openvpn client http traffic to file
     printf "%s\n" "${output}" > "${this_script_path}/http_traffic_${client}"
     printf "%s\n" "${cyan}${m_tab}Openvpn Client --> ${magenta}${client}${reset} ${cyan}--> HTTP traffic saved in --> ${magenta}${this_script_path}/http_traffic_${client}${reset}"
   }
@@ -134,13 +136,14 @@ all_clients () {
 
 # parse http traffic for specific openvpn client
 single_client () {
+  local single ip
   check_client "${1}"
-  local single
+  ip="${clients[${1}]}"
   # search openvpn client static IP (logrotated ones included) and parse DNS queries
-  single="$(find "${queries%/*}/" -name "*${queries##*/}*" -type f -exec zgrep -i -h "${clients[${1}]}" {} + |
+  single="$(find "${queries%/*}/" -name "*${queries##*/}*" -type f -exec zgrep -i -h "${ip}" {} + |
     awk 'match($0, /query:[[:space:]]*([^[:space:]]+)/, a) {print $1" "$2" "a[1]}' |
     sort -s -k1.8n -k1.4M -k1.1n)"
-  # save client http traffic to file as sorted
+  # save client http traffic to file
   printf "%s\n" "${single}" > "${this_script_path}/http_traffic_${1}"
   printf "\n"
   printf "%s\n" "${cyan}${m_tab}Openvpn Client --> ${magenta}${1}${reset} ${cyan}--> HTTP traffic saved in --> ${magenta}${this_script_path}/http_traffic_${1}${reset}"
