@@ -42,18 +42,14 @@ pool="10.8.0.0"
 pool_prefix="${pool%.*}"
 
 # set color
-setup_terminal () {
-  red=$(tput setaf 1)
-  cyan=$(tput setaf 6)
-  magenta=$(tput setaf 5)
-  TPUT_BOLD=$(tput bold)
-  TPUT_BGRED=$(tput setab 1)
-  TPUT_WHITE=$(tput setaf 7)
-  reset=$(tput sgr 0)
-  printf -v m_tab '%*s' 2 ''
-}
-
-setup_terminal
+red=$(tput setaf 1)
+cyan=$(tput setaf 6)
+magenta=$(tput setaf 5)
+TPUT_BOLD=$(tput bold)
+TPUT_BGRED=$(tput setab 1)
+TPUT_WHITE=$(tput setaf 7)
+reset=$(tput sgr 0)
+printf -v m_tab '%*s' 2 ''
 
 # fatal
 fatal () {
@@ -76,14 +72,13 @@ if command -v dirname >/dev/null 2>&1 && command -v readlink >/dev/null 2>&1 && 
   this_script_path="$( cd -P "$( dirname "${this_script_full_path}" )" >/dev/null 2>&1 && pwd )"
   this_script_name="$(basename "${this_script_full_path}")"
 else
-  echo "cannot find script path!"
-  exit 1
+  fatal "Cannot find script path! Check you have dirname,readlink,basename tools"
 fi
 
 # declare associative array
+# key-value --> client name-static ip
 declare -A clients
 
-# key-value --> client name-static ip
 while read -r each
 do
   clients[${each}]=$(< "${ccd}/${each}" grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" | grep "${pool_prefix}")
@@ -118,13 +113,13 @@ all_clients () {
 
   for client in "${!clients[@]}"
   do
-    http["${client}"]=$(find "${queries%/*}/" -name "*${queries##*/}*" -print0 2>/dev/null |
+    http["${client}"]="$(find "${queries%/*}/" -name "*${queries##*/}*" -print0 2>/dev/null |
       # search openvpn client static IP in all files (logrotated ones included)
       xargs -0 zgrep -i "${clients[${client}]}" |
       # parse queries for this client
       awk '{for(i=1; i<=NF; i++) if($i~/query:/) print $1" "$2" "$((i+1))}' |
       # normalize data
-      awk -F: '{print substr($0,index($0,$2))}')
+      awk -F: '{print substr($0,index($0,$2))}')"
     # save per openvpn client http traffic to file as sorted
     echo "${http[${client}]}" | sort -k1.8n -k1.4M -k1.1n > "${this_script_path}/http_traffic_${client}"
     echo "${cyan}${m_tab}Openvpn Client --> ${magenta}${client}${reset} ${cyan}--> HTTP traffic saved in --> ${magenta}${this_script_path}/http_traffic_${client}${reset}"
@@ -132,8 +127,7 @@ all_clients () {
   echo ""
 }
 
-# parse http traffic for specific openvpn client
-# parse http traffic for specific openvpn client
+# parse http traffic for specific openvpn client as argument
 single_client () {
   check_client "${1}"
   local single
