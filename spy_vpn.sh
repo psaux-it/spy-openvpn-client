@@ -112,8 +112,8 @@ all_clients () {
   # create a function to parse HTTP traffic for a single client
   parse_traffic () {
     local client output ip
-    ip="${clients[$client]}"
     client="${1}"
+    ip="${clients[$client]}"
     # search openvpn client static IP (logrotated ones included), parse DNS queries, sort
     output="$(find "${queries%/*}/" -name "*${queries##*/}*" -type f -exec zgrep -i -h "${ip}" {} + |
       awk 'match($0, /query:[[:space:]]*([^[:space:]]+)/, a) {print $1" "$2" "a[1]}' |
@@ -131,6 +131,7 @@ all_clients () {
       wait -n
     fi
   done
+  wait
   printf "\n"
 }
 
