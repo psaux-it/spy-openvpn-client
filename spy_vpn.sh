@@ -115,11 +115,9 @@ all_clients () {
   do
     http["${client}"]="$(find "${queries%/*}/" -name "*${queries##*/}*" -print0 2>/dev/null |
       # search openvpn client static IP in all files (logrotated ones included)
-      xargs -0 zgrep -i "${clients[${client}]}" |
+      xargs -0 zgrep -i -h "${clients[${client}]}" |
       # parse queries for this client
-      awk '{for(i=1; i<=NF; i++) if($i~/query:/) print $1" "$2" "$((i+1))}' |
-      # normalize data
-      awk -F: '{print substr($0,index($0,$2))}')"
+      awk '{for(i=1; i<=NF; i++) if($i~/query:/) print $1" "$2" "$((i+1))}')"
     # save per openvpn client http traffic to file as sorted
     echo "${http[${client}]}" | sort -k1.8n -k1.4M -k1.1n > "${this_script_path}/http_traffic_${client}"
     echo "${cyan}${m_tab}Openvpn Client --> ${magenta}${client}${reset} ${cyan}--> HTTP traffic saved in --> ${magenta}${this_script_path}/http_traffic_${client}${reset}"
@@ -133,11 +131,9 @@ single_client () {
   local single
   single="$(find "${queries%/*}/" -name "*${queries##*/}*" -print0 2>/dev/null |
     # search openvpn client static IP in all files (logrotated ones included)
-    xargs -0 zgrep -i "${clients[${1}]}" |
+    xargs -0 zgrep -i -h "${clients[${1}]}" |
     # parse queries for this client
-    awk '{for(i=1; i<=NF; i++) if($i~/query:/) print $1" "$2" "$((i+1))}' |
-    # normalize data
-    awk -F: '{print substr($0,index($0,$2))}')"
+    awk '{for(i=1; i<=NF; i++) if($i~/query:/) print $1" "$2" "$((i+1))}')"
   echo "${single}" | sort -k1.8n -k1.4M -k1.1n > "${this_script_path}/http_traffic_${1}"
   echo -e "\n${cyan}${m_tab}Openvpn Client --> ${magenta}${1}${reset} ${cyan}--> HTTP traffic saved in --> ${magenta}${this_script_path}/http_traffic_${1}${reset}\n"
 }
