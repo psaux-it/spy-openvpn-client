@@ -80,10 +80,18 @@ declare -A clients
 
 # populate array
 # key-value --> client name-static ip
-while read -r each
-do
-  clients[${each}]=$(< "${ccd}/${each}" grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" | grep "${pool_prefix}")
-done < <(find "${ccd}" -type f -exec basename {} \;)
+for each in "${ccd}"/*; do
+  if [[ ! -f ${each} ]]; then
+    printf "$m_tab\e[33mWarn:\e[0m %s is not a file\n" "${each}" >&2
+    continue
+  fi
+  client=${each##*/}
+  if ! client_ip=$(awk '/^ifconfig-push/ {print $2}' "${each}" | grep "${pool%.*}"); then
+    printf "$m_tab\e[33mWarn:\e[0m failed to extract IP address from %s\n" "${each}" >&2
+    continue
+  fi
+  clients[${client}]="${client_ip}"
+done
 
 # list OpenVPN clients
 list_clients () {
@@ -131,6 +139,8 @@ all_clients () {
       wait -n
     fi
   done
+  
+  # wait all parallel jobs complete
   wait
   printf "\n"
 }
@@ -146,9 +156,7 @@ single_client () {
     sort -s -k1.8n -k1.4M -k1.1n)"
   # save client http traffic to file
   printf "%s\n" "${single}" > "${this_script_path}/http_traffic_${1}"
-  printf "\n"
-  printf "%s\n" "${cyan}${m_tab}Openvpn Client --> ${magenta}${1}${reset} ${cyan}--> HTTP traffic saved in --> ${magenta}${this_script_path}/http_traffic_${1}${reset}"
-  printf "\n"
+  printf "\n%s\n\n" "${cyan}${m_tab}Openvpn Client --> ${magenta}${1}${reset} ${cyan}--> HTTP traffic saved in --> ${magenta}${this_script_path}/http_traffic_${1}${reset}"
 }
 
 # live watch http traffic for specific OpenVPN client
@@ -159,34 +167,28 @@ watch_client () {
 
 # help
 help () {
-  printf "\n"
-  printf "%s\n" "${m_tab}${cyan}# Script Help"
+  printf "\n%s\n" "${m_tab}${cyan}# Script Help"
   printf "%s\n" "${m_tab}# --------------------------------------------------------------------------------------------------------------------"
   printf "%s\n" "${m_tab}#${m_tab}  -a | --all-clients   get all OpenVPN clients http traffic to separate file e.g ./spy_vpn.sh --all-clients"
   printf "%s\n" "${m_tab}#${m_tab}  -c | --client        get specific OpenVPN client http traffic to file e.g ./spy_vpn.sh --client JohnDoe"
   printf "%s\n" "${m_tab}#${m_tab}  -l | --list          list OpenVPN clients e.g ./spy_vpn.sh --list"
   printf "%s\n" "${m_tab}#${m_tab}  -w | --watch         live watch specific OpenVPN client http traffic ./spy_vpn.sh --watch JohnDoe"
   printf "%s\n" "${m_tab}#${m_tab}  -h | --help          help screen"
-  printf "%s\n" "${m_tab}# ----------------------------------------------------------------------------------------------------------------------${reset}"
-  printf "\n"
+  printf "%s\n\n" "${m_tab}# ----------------------------------------------------------------------------------------------------------------------${reset}"
 }
 
 # invalid script option
 inv_opt () {
-  printf "\n"
-  printf "%s\\n" "${red}${m_tab}Invalid option${reset}"
-  printf "%s\\n" "${cyan}${m_tab}Try './${this_script_name} --help' for more information.${reset}"
-  printf "\n"
+  printf "\n%s\\n" "${red}${m_tab}Invalid option${reset}"
+  printf "%s\\n" "${cyan}${m_tab}Try './${this_script_name} --help' for more information.${reset}\n"
   exit 1
 }
 
 # script management
 main () {
   if [[ "$#" -eq 0 || "$#" -gt 2 ]]; then
-    printf "\n"
-    printf "%s\\n" "${red}${m_tab}Argument required or too many argument${reset}"
-    printf "%s\\n" "${cyan}${m_tab}Try './${this_script_name} --help' for more information.${reset}"
-    printf "\n"
+    printf "\n%s\\n" "${red}${m_tab}Argument required or too many argument${reset}"
+    printf "%s\\n" "${cyan}${m_tab}Try './${this_script_name} --help' for more information.${reset}\n"
     exit 1
   fi
 
