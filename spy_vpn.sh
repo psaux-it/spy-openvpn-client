@@ -179,8 +179,8 @@ help () {
 
 # invalid script option
 inv_opt () {
-  printf "\n%s\\n" "${red}${m_tab}Invalid option${reset}"
-  printf "%s\\n" "${cyan}${m_tab}Try './${this_script_name} --help' for more information.${reset}\n"
+  printf "\n%s\\n\n" "${red}${m_tab}Invalid option${reset}"
+  printf "%s\\n\n" "${cyan}${m_tab}Try './${this_script_name} --help' for more information.${reset}"
   exit 1
 }
 
@@ -188,7 +188,7 @@ inv_opt () {
 main () {
   if [[ "$#" -eq 0 || "$#" -gt 2 ]]; then
     printf "\n%s\\n" "${red}${m_tab}Argument required or too many argument${reset}"
-    printf "%s\\n" "${cyan}${m_tab}Try './${this_script_name} --help' for more information.${reset}\n"
+    printf "%s\\n\n" "${cyan}${m_tab}Try './${this_script_name} --help' for more information.${reset}"
     exit 1
   fi
 
