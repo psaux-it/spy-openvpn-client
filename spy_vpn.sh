@@ -77,18 +77,23 @@ declare -A clients
 
 # populate array
 # key-value --> client name-static ip
-for each in "${ccd}"/*; do
-  if [[ ! -f ${each} ]]; then
-    printf "$m_tab\e[33mWarn:\e[0m %s is not a file\n" "${each}" >&2
-    continue
-  fi
-  client=${each##*/}
-  if ! client_ip=$(awk '/^ifconfig-push/ {print $2}' "${each}" | grep "${pool%.*}"); then
-    printf "$m_tab\e[33mWarn:\e[0m failed to extract IP address from %s\n" "${each}" >&2
-    continue
-  fi
-  clients[${client}]="${client_ip}"
-done
+clients_name_ip () {
+  # declare global associative array
+  declare -gA clients
+
+  for each in "${ccd}"/*; do
+    if [[ ! -f ${each} ]]; then
+      printf "$m_tab\e[33mWarn:\e[0m %s is not a file\n" "${each}" >&2
+      continue
+    fi
+    client=${each##*/}
+    if ! client_ip=$(awk '/^ifconfig-push/ {print $2}' "${each}" | grep "${pool%.*}"); then
+      printf "$m_tab\e[33mWarn:\e[0m failed to extract IP address from %s\n" "${each}" >&2
+      continue
+    fi
+    clients[${client}]="${client_ip}"
+  done
+}
 
 # list OpenVPN clients
 list_clients () {
@@ -112,6 +117,7 @@ check_client () {
 # this can cause high cpu usage if you have many clients and heavy internet traffic
 all_clients () {
   list_clients
+  clients_name_ip
   num_cores=$(nproc)
 
   # create a function to parse HTTP traffic for a single client
@@ -145,6 +151,7 @@ all_clients () {
 # parse http traffic for specific openvpn client
 single_client () {
   local single ip
+  clients_name_ip
   check_client "${1}"
   ip="${clients[${1}]}"
   # search openvpn client static IP (logrotated ones included) and parse DNS queries
