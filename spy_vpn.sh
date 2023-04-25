@@ -139,7 +139,6 @@ all_clients () {
 
   # wait all parallel jobs complete
   wait
-
   printf "\n"
 }
 
