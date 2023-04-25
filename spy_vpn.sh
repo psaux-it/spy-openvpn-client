@@ -136,9 +136,10 @@ all_clients () {
       wait -n
     fi
   done
-  
+
   # wait all parallel jobs complete
   wait
+
   printf "\n"
 }
 
