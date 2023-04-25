@@ -38,9 +38,6 @@ queries="/var/log/named/queries.log"
 pool="10.8.0.0"
 ####################################################
 
-# pool prefix
-pool_prefix="${pool%.*}"
-
 # set color
 red=$(tput setaf 1)
 cyan=$(tput setaf 6)
@@ -179,7 +176,7 @@ help () {
 
 # invalid script option
 inv_opt () {
-  printf "\n%s\\n\n" "${red}${m_tab}Invalid option${reset}"
+printf "\n%s\\n" "${red}${m_tab}Invalid option${reset}"
   printf "%s\\n\n" "${cyan}${m_tab}Try './${this_script_name} --help' for more information.${reset}"
   exit 1
 }
