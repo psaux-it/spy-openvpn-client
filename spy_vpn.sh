@@ -176,7 +176,7 @@ help () {
 
 # invalid script option
 inv_opt () {
-printf "\n%s\\n" "${red}${m_tab}Invalid option${reset}"
+  printf "\n%s\\n" "${red}${m_tab}Invalid option${reset}"
   printf "%s\\n\n" "${cyan}${m_tab}Try './${this_script_name} --help' for more information.${reset}"
   exit 1
 }
