@@ -72,9 +72,6 @@ else
   fatal "Cannot find script path! Check you have dirname,readlink,basename tools"
 fi
 
-# declare associative array
-declare -A clients
-
 # populate array
 # key-value --> client name-static ip
 clients_name_ip () {
@@ -116,8 +113,8 @@ check_client () {
 # parse http traffic for all openvpn clients, this will be run in parallel
 # this can cause high cpu usage if you have many clients and heavy internet traffic
 all_clients () {
-  list_clients
   clients_name_ip
+  list_clients
   num_cores=$(nproc)
 
   # create a function to parse HTTP traffic for a single client
