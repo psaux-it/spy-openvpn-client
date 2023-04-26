@@ -76,7 +76,7 @@ fi
 # key-value --> client name-static ip
 clients_name_ip () {
   # declare global associative array
-  declare -A clients
+  declare -gA clients
 
   for each in "${ccd}"/*; do
     if [[ ! -f ${each} ]]; then
