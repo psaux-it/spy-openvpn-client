@@ -42,6 +42,7 @@ pool="10.8.0.0"
 red=$(tput setaf 1)
 cyan=$(tput setaf 6)
 magenta=$(tput setaf 5)
+yellow=$(tput setaf 3)
 TPUT_BOLD=$(tput bold)
 TPUT_BGRED=$(tput setab 1)
 TPUT_WHITE=$(tput setaf 7)
@@ -123,12 +124,23 @@ all_clients () {
     client="${1}"
     ip="${clients[$client]}"
     # search openvpn client static IP (logrotated ones included), parse DNS queries, sort
-    output="$(find "${queries%/*}/" -name "*${queries##*/}*" -type f -exec zgrep -i -h "${ip}" {} + |
+    if ! output="$(find "${queries%/*}/" -name "*${queries##*/}*" -type f -exec zgrep -i -h "${ip}" {} + |
       awk 'match($0, /query:[[:space:]]*([^[:space:]]+)/, a) {print $1" "$2" "a[1]}' |
       sort -s -k1.8n -k1.4M -k1.1n)"
+    then
+      printf "%s\n" "${red}${m_tab}Error: Failed to parse HTTP traffic for client ${client}${reset}"
+      return 1
+    fi
+
     # save per openvpn client http traffic to file
-    printf "%s\n" "${output}" > "${this_script_path}/http_traffic_${client}"
-    printf "%s\n" "${cyan}${m_tab}Openvpn Client --> ${magenta}${client}${reset} ${cyan}--> HTTP traffic saved in --> ${magenta}${this_script_path}/http_traffic_${client}${reset}"
+    if [[ -z "$output" ]]; then
+      printf "%s\n" "${cyan}${m_tab}Openvpn Client --> ${magenta}${client}${reset} ${cyan}--> ${yellow}No HTTP traffic found${reset}"
+    elif ! printf "%s\n" "${output}" > "${this_script_path}/http_traffic_${client}"; then
+      printf "%s\n" "${red}${m_tab}Error: Failed to save HTTP traffic for client ${client} to file ${this_script_path}/http_traffic_${client}${reset}"
+      return 1
+    else
+      printf "%s\n" "${cyan}${m_tab}Openvpn Client --> ${magenta}${client}${reset} ${cyan}--> HTTP traffic saved in --> ${magenta}${this_script_path}/http_traffic_${client}${reset}"
+    fi
   }
 
   # Loop through the clients and parse their HTTP traffic in parallel
