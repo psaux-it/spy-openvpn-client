@@ -150,12 +150,16 @@ main () {
   # if parse error not found also check 'no HTTP traffic' for the client
   # save per openvpn client http traffic to file
   if ! [[ -s "${my_file}" ]]; then
-    printf "%s\n" "${cyan}${m_tab}Openvpn Client --> ${magenta}${client}${reset} ${cyan}--> ${yellow}No HTTP traffic found${reset}"
-  elif ! rsync -r --delete "${my_file}" "${this_script_path}/http_traffic_${client}" >/dev/null 2>&1; then
+    echo -ne "${cyan}${m_tab}Openvpn Client --> ${magenta}${client}${reset} "
+    echo -e "${cyan}--> ${yellow}No HTTP traffic found${reset}"
+  elif ! rsync -r --delete "${my_file}" \
+    "${this_script_path}/http_traffic_${client}" >/dev/null 2>&1; then
     trap 'rm -f "${my_file}"' ERR
-    printf "%s\n" "${red}${m_tab}Error: Failed to save HTTP traffic for client ${client} to file ${this_script_path}/http_traffic_${client}${reset}"
+    echo -ne "${red}${m_tab}Error: Failed to save HTTP traffic for "
+    echo -e "client ${client} to file ${this_script_path}/http_traffic_${client}${reset}"
   else
-    printf "%s\n" "${cyan}${m_tab}Openvpn Client --> ${magenta}${client}${reset} ${cyan}--> HTTP traffic saved in --> ${magenta}${this_script_path}/http_traffic_${client}${reset}"
+    echo -ne "${cyan}${m_tab}Openvpn Client --> ${magenta}${client}${reset} "
+    echo -e "${cyan}--> HTTP traffic saved in --> ${magenta}${this_script_path}/http_traffic_${client}${reset}"
   fi
   [[ $1 == single ]] && printf "\n"
 }
