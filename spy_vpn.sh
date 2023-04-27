@@ -127,9 +127,6 @@ main () {
   local my_file
   my_file=$(mktemp)
 
-  # Set up trap to delete my_file on exit or SIGINT
-  trap 'rm -f "$my_file"' EXIT INT
-
   # search openvpn client static IP (logrotated ones included), parse DNS queries, sort
   { find "${queries%/*}/" -name "*${queries##*/}*" -type f -print0 |
     xargs -0 zgrep -i -h -w "${ip}" |
@@ -163,7 +160,7 @@ main () {
   if ! [[ -s "${my_file}" ]]; then
     echo -ne "${cyan}${m_tab}Openvpn Client --> ${magenta}${client}${reset} "
     echo -e "${cyan}--> ${yellow}No HTTP traffic found${reset}"
-  elif ! rsync -r --delete "${my_file}" \
+  elif ! rsync -r --delete --remove-source-files "${my_file}" \
     "${this_script_path}/http_traffic_${client}" >/dev/null 2>&1; then
     trap 'rm -f "${my_file}"' ERR
     echo -ne "${red}${m_tab}Error: Failed to save HTTP traffic for "
