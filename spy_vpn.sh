@@ -85,8 +85,19 @@ clients_name_ip () {
       printf "$m_tab\e[33mWarn:\e[0m %s is not a file\n" "${each}" >&2
       continue
     fi
+
     client=${each##*/}
-    if ! client_ip=$(awk '/^ifconfig-push/ {print $2}' "${each}" | grep "${pool%.*}"); then
+
+    if ! client_ip=$(awk -v pool="${pool%.*}" '
+      BEGIN { exit_code = 1 }
+      /^ifconfig-push\s+([0-9]{1,3}\.){3}[0-9]{1,3}/ {
+        split($2, a, ".");
+        if (a[1]<256 && a[2]<256 && a[3]<256 && a[4]<256 && $2 ~ pool) {
+          print $2;
+          exit_code = 0
+        }
+      }
+      END { exit exit_code }' "${each}"); then
       printf "$m_tab\e[33mWarn:\e[0m failed to extract IP address from %s\n" "${each}" >&2
       continue
     fi
