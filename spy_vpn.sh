@@ -132,7 +132,7 @@ main () {
 
   # search openvpn client static IP (logrotated ones included), parse DNS queries, sort
   { find "${queries%/*}/" -name "*${queries##*/}*" -type f -print0 |
-    xargs -0 zgrep -i -h "${ip}" |
+    xargs -0 zgrep -i -h -w "${ip}" |
     awk 'match($0, /query:[[:space:]]*([^[:space:]]+)/, a) {print $1" "$2" "a[1]}' |
     sort -s -k1.8n -k1.4M -k1.1n
   } 2>/dev/null > "${my_file}"
@@ -207,9 +207,10 @@ all_clients () {
 
 # parse http traffic for specific openvpn client
 single_client () {
-  local ip
+  local client ip
   clients_name_ip
   check_client "${1}"
+  client="${1}"
   ip="${clients[${1}]}"
   main single
 }
@@ -219,7 +220,7 @@ watch_client () {
   clients_name_ip
   check_client "${1}"
     tail -f "${queries}" \
-  | grep --line-buffered "${clients[${1}]}" \
+  | grep --line-buffered -w "${clients[${1}]}" \
   | awk -v space="${m_tab}" '{for(i=1; i<=NF; i++) if($i~/query:/) printf "%s\033[35m%s\033[39m \033[36m%s\033[39m\n", space, $1, $(i+1)}'
 }
 
