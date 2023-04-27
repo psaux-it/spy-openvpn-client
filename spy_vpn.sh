@@ -79,6 +79,7 @@ clients_name_ip () {
   # declare global associative array
   declare -gA clients
 
+  printf "\n"
   for each in "${ccd}"/*; do
     if [[ ! -f ${each} ]]; then
       printf "$m_tab\e[33mWarn:\e[0m %s is not a file\n" "${each}" >&2
@@ -111,41 +112,73 @@ check_client () {
   fi
 }
 
-# parse http traffic for all openvpn clients, this will be run in parallel
-# this can cause high cpu usage if you have many clients and heavy internet traffic
+main () {
+  local my_file
+  my_file=$(mktemp)
+
+  # Set up trap to delete my_file on exit or SIGINT
+  trap 'rm -f "$my_file"' EXIT INT
+
+  # search openvpn client static IP (logrotated ones included), parse DNS queries, sort
+  { find "${queries%/*}/" -name "*${queries##*/}*" -type f -print0 |
+    xargs -0 zgrep -i -h "${ip}" |
+    awk 'match($0, /query:[[:space:]]*([^[:space:]]+)/, a) {print $1" "$2" "a[1]}' |
+    sort -s -k1.8n -k1.4M -k1.1n
+  } 2>/dev/null > "${my_file}"
+
+  # take immediate snapshot of pipestatus
+  status=( "${PIPESTATUS[@]}" )
+
+  # remove the sort command exit status from the PIPESTATUS array
+  # that not cause any parse error
+  if [ ${#status[@]} -ge 4 ]; then unset 'status[3]'; fi
+
+  # check any piped commands fails
+  if [[ "${status[*]}" =~ [^0\ ] ]]; then
+    for i in "${!status[@]}"; do
+      if [[ "${status[i]}" -ne 0 ]]; then
+        case $i in
+          0) { printf "%s\n" "${red}${m_tab}find command failed with exit status ${status[i]}, check the path is correct --> ${queries}${reset}"; return 1; } ;;
+             #  error code 123 for zgrep means no http traffic at all for this client, so this is not a parse error and excluded
+          1) [[ "${status[i]}" -eq 127 ]] && { printf "%s\n" "${red}${m_tab}zgrep command not found. Install zgrep and try again.${reset}"; return 1; } ;;
+          2) { printf "%s\n" "${red}${m_tab}awk command failed with exit status ${status[i]}, please open a bug${reset}"; return 1; } ;;
+        esac
+      fi
+    done
+  fi
+
+  # if parse error not found also check 'no HTTP traffic' for the client
+  # save per openvpn client http traffic to file
+  if ! [[ -s "${my_file}" ]]; then
+    printf "%s\n" "${cyan}${m_tab}Openvpn Client --> ${magenta}${client}${reset} ${cyan}--> ${yellow}No HTTP traffic found${reset}"
+  elif ! rsync -r --delete "${my_file}" "${this_script_path}/http_traffic_${client}" >/dev/null 2>&1; then
+    trap 'rm -f "${my_file}"' ERR
+    printf "%s\n" "${red}${m_tab}Error: Failed to save HTTP traffic for client ${client} to file ${this_script_path}/http_traffic_${client}${reset}"
+  else
+    printf "%s\n" "${cyan}${m_tab}Openvpn Client --> ${magenta}${client}${reset} ${cyan}--> HTTP traffic saved in --> ${magenta}${this_script_path}/http_traffic_${client}${reset}"
+  fi
+  [[ $1 == single ]] && printf "\n"
+}
+
+# parse http traffic for all openvpn clients, this will be run in parallel for every client
+# this can cause high cpu usage if you have many openvpn clients and heavy internet traffic
 all_clients () {
   clients_name_ip
   list_clients
   num_cores=$(nproc)
 
-  # create a function to parse HTTP traffic for a single client
+  # main parsing function
   parse_traffic () {
-    local client output ip
+    local client ip
     client="${1}"
     ip="${clients[$client]}"
-    # search openvpn client static IP (logrotated ones included), parse DNS queries, sort
-    if ! output="$(find "${queries%/*}/" -name "*${queries##*/}*" -type f -exec zgrep -i -h "${ip}" {} + |
-      awk 'match($0, /query:[[:space:]]*([^[:space:]]+)/, a) {print $1" "$2" "a[1]}' |
-      sort -s -k1.8n -k1.4M -k1.1n)"
-    then
-      printf "%s\n" "${red}${m_tab}Error: Failed to parse HTTP traffic for client ${client}${reset}"
-      return 1
-    fi
-
-    # save per openvpn client http traffic to file
-    if [[ -z "$output" ]]; then
-      printf "%s\n" "${cyan}${m_tab}Openvpn Client --> ${magenta}${client}${reset} ${cyan}--> ${yellow}No HTTP traffic found${reset}"
-    elif ! printf "%s\n" "${output}" > "${this_script_path}/http_traffic_${client}"; then
-      printf "%s\n" "${red}${m_tab}Error: Failed to save HTTP traffic for client ${client} to file ${this_script_path}/http_traffic_${client}${reset}"
-      return 1
-    else
-      printf "%s\n" "${cyan}${m_tab}Openvpn Client --> ${magenta}${client}${reset} ${cyan}--> HTTP traffic saved in --> ${magenta}${this_script_path}/http_traffic_${client}${reset}"
-    fi
+    main
   }
 
   # Loop through the clients and parse their HTTP traffic in parallel
   # Limit the number of parallel processes to the number of CPU core
-  for client in "${!clients[@]}"; do
+  for client in "${!clients[@]}"
+  do
     parse_traffic "${client}" &
     if (( $(jobs -r -p | wc -l) >= num_cores )); then
       wait -n
@@ -159,23 +192,20 @@ all_clients () {
 
 # parse http traffic for specific openvpn client
 single_client () {
-  local single ip
+  local ip
   clients_name_ip
   check_client "${1}"
   ip="${clients[${1}]}"
-  # search openvpn client static IP (logrotated ones included) and parse DNS queries
-  single="$(find "${queries%/*}/" -name "*${queries##*/}*" -type f -exec zgrep -i -h "${ip}" {} + |
-    awk 'match($0, /query:[[:space:]]*([^[:space:]]+)/, a) {print $1" "$2" "a[1]}' |
-    sort -s -k1.8n -k1.4M -k1.1n)"
-  # save client http traffic to file
-  printf "%s\n" "${single}" > "${this_script_path}/http_traffic_${1}"
-  printf "\n%s\n\n" "${cyan}${m_tab}Openvpn Client --> ${magenta}${1}${reset} ${cyan}--> HTTP traffic saved in --> ${magenta}${this_script_path}/http_traffic_${1}${reset}"
+  main single
 }
 
 # live watch http traffic for specific OpenVPN client
 watch_client () {
+  clients_name_ip
   check_client "${1}"
-  tail -f "${queries}" | grep --line-buffered "${clients[${1}]}" | awk '{for(i=1; i<=NF; i++) if($i~/query:/) printf "\033[35m%s\033[39m \033[36m%s\033[39m\n", $1, $(i+1)}'
+    tail -f "${queries}" \
+  | grep --line-buffered "${clients[${1}]}" \
+  | awk -v space="${m_tab}" '{for(i=1; i<=NF; i++) if($i~/query:/) printf "%s\033[35m%s\033[39m \033[36m%s\033[39m\n", space, $1, $(i+1)}'
 }
 
 # help
@@ -198,7 +228,7 @@ inv_opt () {
 }
 
 # script management
-main () {
+man () {
   if [[ "$#" -eq 0 || "$#" -gt 2 ]]; then
     printf "\n%s\\n" "${red}${m_tab}Argument required or too many argument${reset}"
     printf "%s\\n\n" "${cyan}${m_tab}Try './${this_script_name} --help' for more information.${reset}"
@@ -219,5 +249,5 @@ main () {
   done
 }
 
-# Call main
-main "${@}"
+# Call man
+man "${@}"
