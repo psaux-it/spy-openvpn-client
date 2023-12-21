@@ -218,7 +218,7 @@ watch_client () {
   check_client "${1}"
     tail -f "${queries}" \
   | grep --line-buffered -w "${clients[${1}]}" \
-  | awk -v space="${m_tab}" '{for(i=1; i<=NF; i++) if($i~/query:/) printf "%s\033[35m%s\033[39m \033[36m%s\033[39m\n", space, $1, $(i+1)}'
+  | awk -v space="${m_tab}" '{for(i=1; i<=NF; i++) if($i~/query:/ && $(i+1) !~ /addr\.arpa/) printf "%s\033[35m%s\033[39m \033[36m%s\033[39m\n", space, $1, $(i+1)}'
 }
 
 # help
